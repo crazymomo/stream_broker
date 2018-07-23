@@ -6,7 +6,7 @@ services:
       build:
         context: ./nginx-rtmp
       depends_on:
-        # - stream-broker 
+        - stream-broker
         - stream-monitor
       restart: always
       ports:
@@ -19,18 +19,16 @@ services:
       container_name: nginx-rtmp
       networks:
         - stream-network
-    # # stream-broker
-    # stream-broker:
-      # build:
-        # context: ./stream-broker
-      # restart: always
-      # ports:
-        # - 80:80
-      # volumes:
-        # - ./stream-broker/service/root:/usr/src/app/root
-      # container_name: stream-broker
-      # networks:
-        # - stream-network
+    # stream-broker
+    stream-broker:
+      build:
+        context: ./stream-broker
+      restart: always
+      volumes:
+        - ./stream-broker/service/root:/usr/src/app/root
+      container_name: stream-broker
+      networks:
+        - stream-network
     # stream-monitor
     stream-monitor:
       build:
