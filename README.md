@@ -1,5 +1,7 @@
 # stream_broker
 
+*Beforing running this service, please make sure that you have already installed docker.*
+
 ##### How to build service
 ```
 bash service.sh init
