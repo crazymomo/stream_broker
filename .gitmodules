@@ -1,0 +1,6 @@
+[submodule "services/nginx-rtmp/service/nginx-rtmp-module"]
+	path = services/nginx-rtmp/service/nginx-rtmp-module
+	url = git@github.com:arut/nginx-rtmp-module.git
+[submodule "services/nginx-rtmp/service/nginx"]
+	path = services/nginx-rtmp/service/nginx
+	url = git@github.com:nginx/nginx.git

@@ -1,0 +1,166 @@
+diff --git a/hls/ngx_rtmp_hls_module.c b/hls/ngx_rtmp_hls_module.c
+index 25166cb..fcb90b4 100644
+--- a/hls/ngx_rtmp_hls_module.c
++++ b/hls/ngx_rtmp_hls_module.c
+@@ -11,6 +11,7 @@
+ #include <ngx_rtmp_codec_module.h>
+ #include "ngx_rtmp_mpegts.h"
+ 
++#include "logger.h"
+ 
+ static ngx_rtmp_publish_pt              next_publish;
+ static ngx_rtmp_close_stream_pt         next_close_stream;
+@@ -79,6 +80,10 @@ typedef struct {
+     uint64_t                            aframe_pts;
+ 
+     ngx_rtmp_hls_variant_t             *var;
++
++    // Add first frame pts/dst of when opening fragment
++    uint64_t _first_frame_dts;
++    uint64_t _first_frame_pts;
+ } ngx_rtmp_hls_ctx_t;
+ 
+ 
+@@ -828,6 +833,17 @@ ngx_rtmp_hls_close_fragment(ngx_rtmp_session_t *s)
+     ngx_log_debug1(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                    "hls: close fragment n=%uL", ctx->frag);
+ 
++    {
++        ngx_rtmp_hls_frag_t* f = ngx_rtmp_hls_get_frag(s, ctx->nfrags);
++        LOG("[%lu/%lu][%s][%.2f][%s]",
++                ctx -> _first_frame_dts,
++                ctx -> _first_frame_pts,
++                ctx -> stream.data,
++                f -> duration,
++                ctx -> playlist.data);
++    }
++
++
+     ngx_rtmp_mpegts_close_file(&ctx->file);
+ 
+     ctx->opened = 0;
+@@ -1559,7 +1575,7 @@ ngx_rtmp_hls_parse_aac_header(ngx_rtmp_session_t *s, ngx_uint_t *objtype,
+ 
+ 
+ static void
+-ngx_rtmp_hls_update_fragment(ngx_rtmp_session_t *s, uint64_t ts,
++ngx_rtmp_hls_update_fragment(ngx_rtmp_session_t *s, uint64_t dts, uint64_t pts,
+     ngx_int_t boundary, ngx_uint_t flush_rate)
+ {
+     ngx_rtmp_hls_ctx_t         *ctx;
+@@ -1578,7 +1594,7 @@ ngx_rtmp_hls_update_fragment(ngx_rtmp_session_t *s, uint64_t ts,
+ 
+     if (ctx->opened) {
+         f = ngx_rtmp_hls_get_frag(s, ctx->nfrags);
+-        d = (int64_t) (ts - ctx->frag_ts);
++        d = (int64_t) (dts - ctx->frag_ts);
+ 
+         if (d > (int64_t) hacf->max_fraglen * 90 || d < -90000) {
+             ngx_log_error(NGX_LOG_ERR, s->connection->log, 0,
+@@ -1586,7 +1602,7 @@ ngx_rtmp_hls_update_fragment(ngx_rtmp_session_t *s, uint64_t ts,
+             force = 1;
+ 
+         } else {
+-            f->duration = (ts - ctx->frag_ts) / 90000.;
++            f->duration = (dts - ctx->frag_ts) / 90000.;
+             discont = 0;
+         }
+     }
+@@ -1601,14 +1617,14 @@ ngx_rtmp_hls_update_fragment(ngx_rtmp_session_t *s, uint64_t ts,
+         case NGX_RTMP_HLS_SLICING_ALIGNED:
+ 
+             ts_frag_len = hacf->fraglen * 90;
+-            same_frag = ctx->frag_ts / ts_frag_len == ts / ts_frag_len;
++            same_frag = ctx->frag_ts / ts_frag_len == dts / ts_frag_len;
+ 
+             if (f && same_frag) {
+                 boundary = 0;
+             }
+ 
+             if (f == NULL && (ctx->frag_ts == 0 || same_frag)) {
+-                ctx->frag_ts = ts;
++                ctx->frag_ts = dts;
+                 boundary = 0;
+             }
+ 
+@@ -1617,13 +1633,17 @@ ngx_rtmp_hls_update_fragment(ngx_rtmp_session_t *s, uint64_t ts,
+ 
+     if (boundary || force) {
+         ngx_rtmp_hls_close_fragment(s);
+-        ngx_rtmp_hls_open_fragment(s, ts, discont);
++        ngx_rtmp_hls_open_fragment(s, dts, discont);
++
++        // when opening fragment, add first's frame pts and dts
++        ctx -> _first_frame_dts = dts;
++        ctx -> _first_frame_pts = pts;
+     }
+ 
+     b = ctx->aframe;
+     if (ctx->opened && b && b->last > b->pos &&
+         ctx->aframe_pts + (uint64_t) hacf->max_audio_delay * 90 / flush_rate
+-        < ts)
++        < dts)
+     {
+         ngx_rtmp_hls_flush_audio(s);
+     }
+@@ -1742,7 +1762,7 @@ ngx_rtmp_hls_audio(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
+      * do it in video handler
+      */
+ 
+-    ngx_rtmp_hls_update_fragment(s, pts, codec_ctx->avc_header == NULL, 2);
++    ngx_rtmp_hls_update_fragment(s, pts, pts, codec_ctx->avc_header == NULL, 2);
+ 
+     if (b->last + size > b->end) {
+         ngx_rtmp_hls_flush_audio(s);
+@@ -2027,7 +2047,7 @@ ngx_rtmp_hls_video(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
+     boundary = frame.key && (codec_ctx->aac_header == NULL || !ctx->opened ||
+                              (b && b->last > b->pos));
+ 
+-    ngx_rtmp_hls_update_fragment(s, frame.dts, boundary, 1);
++    ngx_rtmp_hls_update_fragment(s, frame.dts, frame.pts, boundary, 1);
+ 
+     if (!ctx->opened) {
+         return NGX_OK;
+diff --git a/logger.h b/logger.h
+new file mode 100644
+index 0000000..1d4ffef
+--- /dev/null
++++ b/logger.h
+@@ -0,0 +1,37 @@
++#ifndef _LOGGER_H_INCLUDED_
++#define _LOGGER_H_INCLUDED_
++
++#include <stdio.h>
++
++#include <time.h>
++
++#define LOG_FILE    "/opt/log_data/report.log"
++
++#define BUFF_SIZE   1024
++
++#define LOG(f_, ...) _log((f_), ##__VA_ARGS__)
++
++void _log(const char *fmt, ...) {
++    // get date
++    time_t t = time(NULL);
++    struct tm *tm = localtime(&t);
++    char s[64];
++    strftime(s, sizeof(s), "%c", tm);
++
++    // get msg
++    va_list argList;
++    char msg[1024];
++    // print fmt and arg list
++    va_start(argList, fmt);
++    vsprintf(msg, fmt, argList);
++    va_end(argList);
++
++    // open file
++    FILE *fd = fopen(LOG_FILE, "a+");
++    // write msg with date
++    fprintf(fd, "%s - %s\n", s, msg);
++    // close file
++    fclose(fd);
++}
++
++#endif /* _LOGGER_H_INCLUDED_ */

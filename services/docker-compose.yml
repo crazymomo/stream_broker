@@ -5,42 +5,44 @@ services:
     nginx-rtmp:
       build:
         context: ./nginx-rtmp
-      depends_on:
-        - stream-broker
-        - stream-monitor
+      # depends_on:
+        # - stream-broker
+        # - stream-monitor
       restart: always
       ports:
         - 1935:1935
         - 8080:8080
       volumes:
+        - ./nginx-rtmp/service/nginx-rtmp-module:/tmp/build/nginx-rtmp-module
         - ./nginx-rtmp/config:/opt/config
         - ../data/hls_data:/usr/local/nginx/html/hls
         - ../data/sample_data:/opt/sample_data
+        - ../data/log_data:/opt/log_data
       container_name: nginx-rtmp
       networks:
         - stream-network
-    # stream-broker
-    stream-broker:
-      build:
-        context: ./stream-broker
-      restart: always
-      volumes:
-        - ./stream-broker/service/root:/usr/src/app/root
-      container_name: stream-broker
-      networks:
-        - stream-network
-    # stream-monitor
-    stream-monitor:
-      build:
-        context: ./stream-monitor
-      restart: always
-      volumes:
-        - ./stream-monitor/service/script:/opt/script
-        - ../data/hls_data:/opt/hls_data
-        - ../data/log_data:/opt/log_data
-      container_name: stream-monitor
-      networks:
-        - stream-network
+    # # stream-broker
+    # stream-broker:
+      # build:
+        # context: ./stream-broker
+      # restart: always
+      # volumes:
+        # - ./stream-broker/service/root:/usr/src/app/root
+      # container_name: stream-broker
+      # networks:
+        # - stream-network
+    # # stream-monitor
+    # stream-monitor:
+      # build:
+        # context: ./stream-monitor
+      # restart: always
+      # volumes:
+        # - ./stream-monitor/service/script:/opt/script
+        # - ../data/hls_data:/opt/hls_data
+        # - ../data/log_data:/opt/log_data
+      # container_name: stream-monitor
+      # networks:
+        # - stream-network
 networks:
   stream-network:
     driver: bridge

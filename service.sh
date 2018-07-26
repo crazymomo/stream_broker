@@ -23,6 +23,9 @@ command_exist() {
 # ===================================== command list =====================================
 
 init() {
+    # init nginx-rtmp
+    bash $DIR/services/nginx-rtmp/init.sh
+
     # init service
     cd $DIR/services
     docker-compose build
@@ -70,7 +73,7 @@ testlog() {
     fi
 
     # bind report log
-    docker exec -ti stream-monitor tail -F /opt/log_data/report.log
+    docker exec -ti nginx-rtmp tail -F /opt/log_data/report.log
 }
 
 # ===================================== main logic =====================================
